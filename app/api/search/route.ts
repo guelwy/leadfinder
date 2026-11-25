@@ -23,7 +23,7 @@ function scoreLead(website: string | null, phone: string | null) {
   return { score: Math.min(100, score), reasons };
 }
 
-function outreach(name: string, category: string) {
+function outreach(name: string) {
   return `Olá! Encontrei ${name} e pensei que um site profissional poderia apresentar melhor seus serviços, informações e formas de contato. Posso compartilhar uma ideia de página para o negócio?`.slice(0, 350);
 }
 
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         mapsUrl: place.mapsUrl,
         score,
         reasons,
-        outreach: outreach(place.name, place.category),
+        outreach: outreach(place.name),
         status: 'new',
         isDemo: false,
       };
