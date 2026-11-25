@@ -1,11 +1,111 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { demoLeads } from '@/lib/demo';
-export const dynamic='force-dynamic';
-function phoneE164(value?:string){if(!value)return null;const digits=value.replace(/\D/g,'');if(digits.startsWith('55')&&(digits.length===12||digits.length===13))return `+${digits}`;if(digits.length===10||digits.length===11)return `+55${digits}`;return null;}
-function scoreLead(rating:number,reviews:number,website?:string){let score=0;const reasons:string[]=[];score+=Math.round(Math.max(0,Math.min(5,rating))/5*40);if(rating>=4.5)reasons.push('Avaliação alta');else if(rating>=4)reasons.push('Avaliação dentro do filtro');score+=Math.round(Math.min(reviews,100)/100*30);if(reviews>=50)reasons.push('Boa quantidade de avaliações');else if(reviews>=10)reasons.push('Volume mínimo de avaliações');if(!website){score+=30;reasons.push('Sem site informado');}else reasons.push('Site informado');return {score,reasons};}
-function outreach(name:string,category:string){return `Olá! Encontrei ${name} e pensei que um site profissional poderia apresentar melhor seus ${category.toLowerCase()}, informações e formas de contato. Posso compartilhar uma ideia de página para o negócio?`.slice(0,350);}
-export async function POST(req:NextRequest){try{const body=await req.json();const query=String(body.query??'').trim();const location=String(body.location??'São Paulo, SP').trim();const limit=Math.min(30,Math.max(1,Number(body.limit??30)));const minRating=Math.max(0,Math.min(5,Number(body.minRating??4)));const minReviews=Math.max(0,Number(body.minReviews??10));if(!query)return NextResponse.json({error:'Informe um segmento para pesquisar.'},{status:400});const apiKey=process.env.GOOGLE_MAPS_API_KEY;if(!apiKey){const filtered=demoLeads.filter(x=>x.category.toLowerCase().includes(query.toLowerCase())||query.toLowerCase().includes('negócio')||query.toLowerCase().includes('empresa')).slice(0,limit);return NextResponse.json({mode:'demo',warning:'GOOGLE_MAPS_API_KEY não configurada. Exibindo dados fictícios para demonstração.',leads:filtered.length?filtered:demoLeads.slice(0,Math.min(limit,5))});}
- const response=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':apiKey,'X-Goog-FieldMask':'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.types'},body:JSON.stringify({textQuery:`${query} em ${location}`,languageCode:'pt-BR',regionCode:'BR',pageSize:limit}),cache:'no-store'});if(!response.ok){console.error('Places API error',response.status,await response.text());return NextResponse.json({error:'A Google Places API retornou um erro. Verifique chave, faturamento e permissões.'},{status:502});}const payload=await response.json();const leads=(payload.places??[]).map((p:any)=>{const rating=Number(p.rating??0),reviews=Number(p.userRatingCount??0),website=p.websiteUri??null;const {score,reasons}=scoreLead(rating,reviews,website);const name=p.displayName?.text??'Empresa sem nome';return {id:p.id,name,category:(p.types??[]).slice(0,2).join(', ')||'Negócio local',address:p.formattedAddress??'',phone:phoneE164(p.nationalPhoneNumber),website,rating,reviewCount:reviews,mapsUrl:p.googleMapsUri??'#',score,reasons,outreach:outreach(name,(p.types??[])[0]??'serviços'),status:'new',isDemo:false};}).filter((x:any)=>x.rating>=minRating&&x.reviewCount>=minReviews).sort((a:any,b:any)=>b.score-a.score).slice(0,limit);
- const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(url&&key&&leads.length){const db=createClient(url,key,{auth:{persistSession:false}});const rows=leads.map((x:any)=>({id:x.id,name:x.name,category:x.category,address:x.address,phone:x.phone,website:x.website,rating:x.rating,review_count:x.reviewCount,maps_url:x.mapsUrl,lead_score:x.score,score_reasons:x.reasons,outreach_message:x.outreach,status:'new',source:'google_places',is_demo:false,updated_at:new Date().toISOString()}));const {error}=await db.from('leads').upsert(rows,{onConflict:'id'});if(error)console.error('Supabase upsert failed',error.message);}
- return NextResponse.json({mode:'live',leads});}catch(e){console.error('Search failed',e);return NextResponse.json({error:'Não foi possível concluir a busca.'},{status:500});}}
+import { searchGeoapifyPlaces } from '@/lib/geoapify';
+
+export const dynamic = 'force-dynamic';
+
+function scoreLead(website: string | null, phone: string | null) {
+  let score = 40;
+  const reasons: string[] = [];
+  if (!website) {
+    score += 40;
+    reasons.push('Sem site informado');
+  } else {
+    reasons.push('Site informado');
+  }
+  if (!phone) {
+    score += 20;
+    reasons.push('Telefone não disponível na base');
+  } else {
+    reasons.push('Telefone disponível');
+  }
+  return { score: Math.min(100, score), reasons };
+}
+
+function outreach(name: string, category: string) {
+  return `Olá! Encontrei ${name} e pensei que um site profissional poderia apresentar melhor seus serviços, informações e formas de contato. Posso compartilhar uma ideia de página para o negócio?`.slice(0, 350);
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const query = String(body.query ?? '').trim();
+    const location = String(body.location ?? 'São Paulo, SP').trim();
+    const limit = Math.min(30, Math.max(1, Number(body.limit ?? 30)));
+
+    if (!query) {
+      return NextResponse.json({ error: 'Informe um segmento para pesquisar.' }, { status: 400 });
+    }
+    if (!location) {
+      return NextResponse.json({ error: 'Informe uma região para pesquisar.' }, { status: 400 });
+    }
+
+    const apiKey = process.env.GEOAPIFY_API_KEY;
+    if (!apiKey) {
+      const filtered = demoLeads
+        .filter((lead) => lead.category.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))
+          || query.toLocaleLowerCase('pt-BR').includes('negócio')
+          || query.toLocaleLowerCase('pt-BR').includes('empresa'))
+        .slice(0, limit);
+      return NextResponse.json({
+        mode: 'demo',
+        warning: 'GEOAPIFY_API_KEY não configurada. Exibindo dados fictícios para demonstração.',
+        leads: filtered.length ? filtered : demoLeads.slice(0, Math.min(limit, 5)),
+      });
+    }
+
+    const places = await searchGeoapifyPlaces({ apiKey, query, location, limit });
+    const leads = places.map((place) => {
+      const { score, reasons } = scoreLead(place.website, place.phone);
+      return {
+        id: place.id,
+        name: place.name,
+        category: place.category,
+        address: place.address,
+        phone: place.phone,
+        website: place.website,
+        rating: 0,
+        reviewCount: 0,
+        mapsUrl: place.mapsUrl,
+        score,
+        reasons,
+        outreach: outreach(place.name, place.category),
+        status: 'new',
+        isDemo: false,
+      };
+    }).sort((a, b) => b.score - a.score);
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (url && key && leads.length) {
+      const db = createClient(url, key, { auth: { persistSession: false } });
+      const rows = leads.map((lead) => ({
+        id: lead.id,
+        name: lead.name,
+        category: lead.category,
+        address: lead.address,
+        phone: lead.phone,
+        website: lead.website,
+        rating: null,
+        review_count: 0,
+        maps_url: lead.mapsUrl,
+        lead_score: lead.score,
+        score_reasons: lead.reasons,
+        outreach_message: lead.outreach,
+        status: 'new',
+        source: 'geoapify',
+        is_demo: false,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error } = await db.from('leads').upsert(rows, { onConflict: 'id' });
+      if (error) console.error('Supabase upsert failed', error.message);
+    }
+
+    return NextResponse.json({ mode: 'live', leads, provider: 'geoapify' });
+  } catch (error) {
+    console.error('Geoapify search failed', error);
+    const message = error instanceof Error ? error.message : 'Não foi possível concluir a busca.';
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}
