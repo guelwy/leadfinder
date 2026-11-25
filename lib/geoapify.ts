@@ -28,16 +28,16 @@ type GeoapifyFeature = {
 };
 
 const CATEGORY_RULES: Array<{ terms: string[]; categories: string[] }> = [
-  { terms: ['salão', 'salao', 'cabeleireiro', 'barbearia', 'beleza', 'manicure', 'unha', 'estética', 'estetica'], categories: ['commercial.hairdresser', 'commercial.beauty'] },
+  { terms: ['salão', 'salao', 'cabeleireiro', 'barbearia', 'beleza', 'manicure', 'unha', 'estética', 'estetica'], categories: ['service.beauty.hairdresser', 'service.beauty'] },
   { terms: ['restaurante', 'lanchonete', 'pizzaria', 'hamburgueria'], categories: ['catering.restaurant', 'catering.fast_food'] },
-  { terms: ['café', 'cafe', 'cafeteria', 'padaria', 'confeitaria'], categories: ['catering.cafe', 'catering.bakery'] },
-  { terms: ['academia', 'fitness', 'musculação', 'musculacao'], categories: ['leisure.fitness_centre', 'sport.fitness'] },
-  { terms: ['clínica', 'clinica', 'médico', 'medico', 'consultório', 'consultorio'], categories: ['healthcare.clinic', 'healthcare.doctor'] },
+  { terms: ['café', 'cafe', 'cafeteria', 'padaria', 'confeitaria'], categories: ['catering.cafe', 'commercial.food_and_drink.bakery'] },
+  { terms: ['academia', 'fitness', 'musculação', 'musculacao'], categories: ['sport', 'leisure.fitness_centre'] },
+  { terms: ['clínica', 'clinica', 'médico', 'medico', 'consultório', 'consultorio'], categories: ['healthcare.clinic_or_praxis', 'healthcare'] },
   { terms: ['dentista', 'odontologia'], categories: ['healthcare.dentist'] },
   { terms: ['farmácia', 'farmacia', 'drogaria'], categories: ['healthcare.pharmacy'] },
-  { terms: ['pet shop', 'petshop', 'veterinária', 'veterinaria'], categories: ['shop.pet', 'healthcare.veterinary'] },
+  { terms: ['pet shop', 'petshop', 'veterinária', 'veterinaria'], categories: ['commercial.pet', 'healthcare'] },
   { terms: ['oficina', 'mecânica', 'mecanica', 'auto center', 'automotivo'], categories: ['service.vehicle.repair', 'service.vehicle'] },
-  { terms: ['imobiliária', 'imobiliaria', 'corretora de imóveis'], categories: ['office.estate_agent'] },
+  { terms: ['imobiliária', 'imobiliaria', 'corretora de imóveis'], categories: ['service.estate_agent'] },
   { terms: ['loja', 'comércio', 'comercio', 'mercado'], categories: ['commercial', 'shop'] },
 ];
 
